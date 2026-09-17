@@ -1,0 +1,6 @@
+*.parquet
+*.duckdb
+*.duckdb.wal
+*.log
+__pycache__/
+.venv
