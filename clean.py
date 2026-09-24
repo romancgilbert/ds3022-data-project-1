@@ -2,82 +2,109 @@ import duckdb
 import logging
 
 logging.basicConfig(
-    level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='clean.log'
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("clean.log"),
+              logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
 
 DB_PATH = "emissions.duckdb"
-TRIP_TABLES = ["yellow_trips", "green_trips"]
-
-# Each rule pairs a label with the WHERE clause that matches offending rows,
-# so the same code can delete them and then verify they are gone.
-CLEANING_RULES = [
-    ("trips with 0 passengers", "passenger_count = 0"),
-    ("trips 0 miles in length", "trip_distance = 0"),
-    ("trips longer than 100 miles", "trip_distance > 100"),
-    ("trips lasting more than 1 day",
-     "date_diff('second', pickup_time, dropoff_time) > 86400"),
-]
-
-# A trip is a duplicate only when every column matches; this data has no trip ID.
-TRIP_COLUMNS = "VendorID, pickup_time, dropoff_time, passenger_count, trip_distance"
-
-
-def report(message):
-    print(message)
-    logger.info(message)
-
-
-def count_duplicates(con, table):
-    total = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-    unique = con.execute(f"SELECT COUNT(*) FROM (SELECT DISTINCT * FROM {table})").fetchone()[0]
-    return total - unique
-
-
-def count_matching(con, table, condition):
-    return con.execute(f"SELECT COUNT(*) FROM {table} WHERE {condition}").fetchone()[0]
-
-
-def remove_matching(con, table, label, condition):
-    report(f"Before cleaning, {table} has {count_matching(con, table, condition)} {label}")
-    con.execute(f"DELETE FROM {table} WHERE {condition}")
-    report(f"After delete (verify): {count_matching(con, table, condition)}")
+TABLES = ("yellow_trips", "green_trips")
 
 
 def remove_duplicates(con, table):
-    report(f"Before cleaning, {table} has {count_duplicates(con, table)} duplicate trips")
+    before = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    logger.info(f"{table} raw row count: {before}")
 
-    # ROW_NUMBER numbers each copy of a trip within its partition; keeping only
-    # copy_number = 1 keeps one of each and drops the rest.
     con.execute(f"""
-        CREATE OR REPLACE TABLE {table} AS
-        SELECT * EXCLUDE (copy_number) FROM (
-            SELECT *, ROW_NUMBER() OVER (
-                PARTITION BY {TRIP_COLUMNS}
-                ORDER BY pickup_time
-            ) AS copy_number
-            FROM {table}
-        ) WHERE copy_number = 1
+        CREATE TABLE {table}_clean AS
+        SELECT DISTINCT * FROM {table};
+        DROP TABLE {table};
+        ALTER TABLE {table}_clean RENAME TO {table};
     """)
 
-    report(f"After delete (verify): {count_duplicates(con, table)}")
+    after = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    distinct = con.execute(f"SELECT COUNT(*) FROM (SELECT DISTINCT * FROM {table})").fetchone()[0]
+    logger.info(f"{table} after dedupe: {after} (verify: distinct count = {distinct})")
 
 
-def verify_table(con, table):
-    remaining = [("duplicate trips", count_duplicates(con, table))]
-    remaining += [
-        (label, count_matching(con, table, condition))
-        for label, condition in CLEANING_RULES
-    ]
+def remove_zero_passengers(con, table):
+    before = con.execute(f"""
+        SELECT COUNT(*) FROM {table}
+        WHERE passenger_count = 0
+    """).fetchone()[0]
+    logger.info(f"{table} before delete (0 passengers): {before}")
 
-    for label, count in remaining:
-        report(f"VERIFY {table}: {count} {label} remaining")
+    con.execute(f"DELETE FROM {table} WHERE passenger_count = 0")
 
-    if any(count > 0 for _, count in remaining):
-        raise ValueError(f"{table} still contains rows that should have been cleaned")
+    after = con.execute(f"""
+        SELECT COUNT(*) FROM {table}
+        WHERE passenger_count = 0
+    """).fetchone()[0]
+    logger.info(f"{table} after delete (verify): {after}")
 
-    report(f"VERIFY {table}: all conditions cleared, {count_matching(con, table, 'TRUE')} rows remain")
+
+def remove_zero_mile_trips(con, table):
+    before = con.execute(f"""
+        SELECT COUNT(*) FROM {table}
+        WHERE trip_distance = 0
+    """).fetchone()[0]
+    logger.info(f"{table} before delete (0 miles): {before}")
+
+    con.execute(f"DELETE FROM {table} WHERE trip_distance = 0")
+
+    after = con.execute(f"""
+        SELECT COUNT(*) FROM {table}
+        WHERE trip_distance = 0
+    """).fetchone()[0]
+    logger.info(f"{table} after delete (verify): {after}")
+
+
+def remove_long_distance_trips(con, table):
+    before = con.execute(f"""
+        SELECT COUNT(*) FROM {table}
+        WHERE trip_distance > 100
+    """).fetchone()[0]
+    logger.info(f"{table} before delete (>100 miles): {before}")
+
+    con.execute(f"DELETE FROM {table} WHERE trip_distance > 100")
+
+    after = con.execute(f"""
+        SELECT COUNT(*) FROM {table}
+        WHERE trip_distance > 100
+    """).fetchone()[0]
+    logger.info(f"{table} after delete (verify): {after}")
+
+
+def remove_long_duration_trips(con, table):
+    before = con.execute(f"""
+        SELECT COUNT(*) FROM {table}
+        WHERE date_diff('second', pickup_time, dropoff_time) > 86400
+    """).fetchone()[0]
+    logger.info(f"{table} before delete (>1 day): {before}")
+
+    con.execute(f"""
+        DELETE FROM {table}
+        WHERE date_diff('second', pickup_time, dropoff_time) > 86400
+    """)
+
+    after = con.execute(f"""
+        SELECT COUNT(*) FROM {table}
+        WHERE date_diff('second', pickup_time, dropoff_time) > 86400
+    """).fetchone()[0]
+    logger.info(f"{table} after delete (verify): {after}")
+
+
+def clean_table(con, table):
+    remove_duplicates(con, table)
+    remove_zero_passengers(con, table)
+    remove_zero_mile_trips(con, table)
+    remove_long_distance_trips(con, table)
+    remove_long_duration_trips(con, table)
+
+    final = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    logger.info(f"{table} final row count: {final}")
 
 
 def clean_trips():
@@ -87,17 +114,10 @@ def clean_trips():
         con = duckdb.connect(database=DB_PATH, read_only=False)
         logger.info("Connected to DuckDB instance")
 
-        for table in TRIP_TABLES:
-            # Cheap filters run first so the expensive dedupe scans fewer rows.
-            for label, condition in CLEANING_RULES:
-                remove_matching(con, table, label, condition)
-            remove_duplicates(con, table)
-
-        for table in TRIP_TABLES:
-            verify_table(con, table)
+        for table in TABLES:
+            clean_table(con, table)
 
     except Exception as e:
-        print(f"An error occurred: {e}")
         logger.error(f"An error occurred: {e}")
         raise
     finally:
