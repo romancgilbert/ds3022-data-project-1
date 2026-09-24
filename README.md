@@ -152,6 +152,17 @@ data: early-morning trips run long distances on empty roads, while rush-hour
 trips are short and slow. The largest trips for both colours land just under 100
 miles, exactly where the cleaning cutoff puts the ceiling.
 
+The plot below shows something different from the table above it. The table
+reports the **average** CO2 of a single trip, which is heaviest in August for
+both colours. The plot reports the **total** CO2 emitted across every trip in
+the month, which depends on how many trips ran as well as how large each one
+was. On that measure yellow peaks in October (4,839 t) against a February low
+of 3,522 t, while green peaks in May (59 t) against a November low of 49 t.
+
+Green emits roughly 1.2% of yellow's CO2 in every month, so the two series are
+drawn in stacked panels with their own y-axes. On a shared axis the green line
+flattens against zero and its seasonal shape disappears entirely.
+
 ![CO2 by month](co2_by_month_2024.png)
 
 ## Notes

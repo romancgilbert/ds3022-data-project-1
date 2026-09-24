@@ -63,22 +63,45 @@ def heaviest_lightest(con, label, table, column, description, names=None):
 def monthly_plot(con, filename="co2_by_month_2024.png"):
     """Plot monthly CO2 totals for both cab types and save it as a PNG.
 
-    Totals are divided by 1000 so the y-axis reads in tonnes rather than
+    Green output is only about 1.2% of yellow's, so the two series get their
+    own stacked panels rather than a shared axis, where green would flatten
+    against zero. Stacking them keeps each scale readable while sharing one
+    x-axis; a second y-axis on a single panel was avoided because the
+    distance between two differently-scaled lines carries no real meaning.
+
+    Totals are divided by 1000 so the axes read in tonnes rather than
     millions of kilograms.
     """
-    fig, ax = plt.subplots(figsize=(10, 6))
-    for label, table in TABLES.items():
+    colours = {"YELLOW": "#D4A017", "GREEN": "#2E7D5B"}
+
+    fig, axes = plt.subplots(
+        len(TABLES), 1, figsize=(10, 7), sharex=True
+    )
+
+    for ax, (label, table) in zip(axes, TABLES.items()):
         rows = con.execute(f"""
             SELECT month_of_year, SUM(trip_co2_kgs) AS total_co2
             FROM {table} GROUP BY month_of_year ORDER BY 1
         """).fetchall()
         months = [r[0] for r in rows]
         totals = [r[1] / 1000.0 for r in rows]   # kg -> tonnes
-        ax.plot(months, totals, marker="o", label=f"{label} taxis")
-    ax.set_xlabel("Month"); ax.set_ylabel("Total CO2 (tonnes)")
-    ax.set_title("NYC Taxi CO2 Output by Month, 2024")
-    ax.set_xticks(range(1, 13))
-    ax.legend(); fig.savefig(filename, dpi=150)
+
+        ax.plot(months, totals, marker="o", color=colours[label],
+                linewidth=2, markersize=8)
+        # One series per panel, so the panel title names it instead of a
+        # legend box, which otherwise sits on top of the data.
+        ax.set_title(f"{label} taxis", loc="left", fontsize=11)
+        ax.set_ylabel("Total CO2 (tonnes)")
+        ax.grid(axis="y", alpha=0.3)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    fig.suptitle("NYC Taxi CO2 Output by Month, 2024", fontsize=13)
+    axes[-1].set_xlabel("Month")
+    axes[-1].set_xticks(range(1, 13))
+
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(filename, dpi=150)
     report(f"Plot written to {filename}")
 
 
