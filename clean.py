@@ -14,6 +14,11 @@ TABLES = ("yellow_trips", "green_trips")
 
 
 def remove_duplicates(con, table):
+    """Rebuild the table from SELECT DISTINCT *, dropping exact duplicates.
+
+    This data has no trip ID, so two rows matching on every column really are
+    the same trip. Verified by re-counting distinct rows afterwards.
+    """
     before = con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
     logger.info(f"{table} raw row count: {before}")
 
@@ -30,6 +35,7 @@ def remove_duplicates(con, table):
 
 
 def remove_zero_passengers(con, table):
+    """Delete trips that carried no passengers, proving the count reaches 0."""
     before = con.execute(f"""
         SELECT COUNT(*) FROM {table}
         WHERE passenger_count = 0
@@ -46,6 +52,7 @@ def remove_zero_passengers(con, table):
 
 
 def remove_zero_mile_trips(con, table):
+    """Delete trips of zero distance, proving the count reaches 0."""
     before = con.execute(f"""
         SELECT COUNT(*) FROM {table}
         WHERE trip_distance = 0
@@ -62,6 +69,7 @@ def remove_zero_mile_trips(con, table):
 
 
 def remove_long_distance_trips(con, table):
+    """Delete trips longer than 100 miles, proving the count reaches 0."""
     before = con.execute(f"""
         SELECT COUNT(*) FROM {table}
         WHERE trip_distance > 100
@@ -78,6 +86,11 @@ def remove_long_distance_trips(con, table):
 
 
 def remove_long_duration_trips(con, table):
+    """Delete trips lasting more than one day (86,400 seconds).
+
+    Duration is derived from pickup_time and dropoff_time, since the table
+    holds no duration column of its own.
+    """
     before = con.execute(f"""
         SELECT COUNT(*) FROM {table}
         WHERE date_diff('second', pickup_time, dropoff_time) > 86400
@@ -97,6 +110,11 @@ def remove_long_duration_trips(con, table):
 
 
 def clean_table(con, table):
+    """Apply all five cleaning rules to one trip table, in order.
+
+    Duplicates go first so the later counts are reported against a table that
+    already holds one copy of each trip.
+    """
     remove_duplicates(con, table)
     remove_zero_passengers(con, table)
     remove_zero_mile_trips(con, table)
@@ -108,6 +126,11 @@ def clean_table(con, table):
 
 
 def clean_trips():
+    """Clean both trip tables, logging a before/after count for every rule.
+
+    The deletes are permanent; re-running load.py rebuilds both tables from
+    the cached Parquet files if a clean slate is needed.
+    """
     con = None
 
     try:

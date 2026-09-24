@@ -22,11 +22,17 @@ MONTH_NAMES = [None, "January", "February", "March", "April", "May", "June",
 
 
 def report(message):
+    """Send one labelled result line to both the screen and analysis.log.
+
+    The rubric asks for every answer to be printed and logged, so each result
+    goes through here rather than calling print or logger directly.
+    """
     print(message)        # screen
     logger.info(message)  # + log
 
 
 def largest_trip(con, label, table):
+    """Report the single highest-CO2 trip of the year for one cab type."""
     row = con.execute(f"""
         SELECT trip_co2_kgs, trip_distance, pickup_time
         FROM {table}
@@ -37,6 +43,11 @@ def largest_trip(con, label, table):
 
 
 def heaviest_lightest(con, label, table, column, description, names=None):
+    """Report the highest and lowest average-CO2 value of a grouping column.
+
+    Used for all four groupings (hour, day, week, month). Pass `names` to
+    print a label such as 'Sunday' instead of the raw number.
+    """
     rows = con.execute(f"""
         SELECT {column}, AVG(trip_co2_kgs) AS avg_co2
         FROM {table} GROUP BY {column} ORDER BY avg_co2 DESC
@@ -50,6 +61,11 @@ def heaviest_lightest(con, label, table, column, description, names=None):
 
 
 def monthly_plot(con, filename="co2_by_month_2024.png"):
+    """Plot monthly CO2 totals for both cab types and save it as a PNG.
+
+    Totals are divided by 1000 so the y-axis reads in tonnes rather than
+    millions of kilograms.
+    """
     fig, ax = plt.subplots(figsize=(10, 6))
     for label, table in TABLES.items():
         rows = con.execute(f"""
@@ -67,6 +83,11 @@ def monthly_plot(con, filename="co2_by_month_2024.png"):
 
 
 def main():
+    """Run all five analyses for each cab type, then render the plot.
+
+    Opens the database read-only, since this stage only reports on what
+    transform.py already calculated.
+    """
     con = None
     try:
         con = duckdb.connect(DB_PATH, read_only=True)

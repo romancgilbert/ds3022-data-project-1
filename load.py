@@ -33,6 +33,11 @@ TAXI_CONFIG = {
 
 
 def download_parquet(taxi_type, month):
+    """Return a local path to one monthly Parquet file.
+
+    The file is fetched from the NYC TLC site only if it is not already
+    cached in data/parquet/, so re-runs cost no network time.
+    """
     filename = f"{taxi_type}_tripdata_{YEAR}-{month:02d}.parquet"
     destination = os.path.join(PARQUET_DIR, filename)
 
@@ -57,6 +62,11 @@ def download_parquet(taxi_type, month):
 
 
 def load_vehicle_emissions(con):
+    """Build the vehicle_emissions lookup table from the repo's CSV.
+
+    This is the smallest table, so it loads first as a quick check that the
+    connection and file paths are working before the taxi files are touched.
+    """
     con.execute(f"""
         CREATE OR REPLACE TABLE vehicle_emissions AS
         SELECT * FROM read_csv_auto('{VEHICLE_EMISSIONS_CSV}')
@@ -67,6 +77,11 @@ def load_vehicle_emissions(con):
 
 
 def load_taxi_data(con, taxi_type, config):
+    """Load all 12 months of one taxi colour into its trip table.
+
+    Months are looped over programmatically rather than written as twelve
+    static INSERTs, and the raw row count is reported before any cleaning.
+    """
     os.makedirs(PARQUET_DIR, exist_ok=True)
 
     # All 12 files are fetched before the table is replaced, so a failed
@@ -106,6 +121,11 @@ def load_taxi_data(con, taxi_type, config):
 
 
 def load_parquet_files():
+    """Build all three tables in emissions.duckdb and report raw row counts.
+
+    Any failure is logged and re-raised so a partial load never looks like a
+    successful one.
+    """
     con = None
 
     try:
