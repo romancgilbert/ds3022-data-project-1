@@ -1,3 +1,4 @@
 duckdb
 pandas
 dbt-duckdb
+matplotlib
